@@ -197,7 +197,7 @@
         } 
         else if (res.status === 'ready_no_target') {
           Swal.close();
-          document.getElementById('mainSection').innerHTML = `<h5 class="text-success mt-4">คุณเข้าสู่ระบบในชื่อ ${currentUser.name}</h5><p class="text-muted">กรุณากดลิงก์ของผู้เข้าประกวดเพื่อทำการโหวต</p>`;
+          document.getElementById('mainSection').innerHTML = `<h5 class="text-success mt-4">คุณเข้าสู่ระบบในชื่อ ${currentUser.name}</h5><p class="text-muted">กรุณาสแกน QR Code ที่รูปภาพเพื่อทำการโหวต</p>`;
           document.getElementById('mainSection').style.display = 'block';
         }
         else {
