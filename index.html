@@ -152,8 +152,8 @@
           if (targetNo) {
             await verifyAndLoad(targetNo); // โหลดข้อมูลโหวตต่อเลย
           } else {
-            document.getElementById('mainSection').innerHTML = `<h5 class="text-success mt-4">ลงทะเบียนสำเร็จในชื่อ ${name}</h5><p class="text-muted">กรุณากดลิงก์ของผู้เข้าประกวดเพื่อทำการโหวต</p>`;
-            Swal.fire('สำเร็จ', 'ลงทะเบียนเรียบร้อยแล้ว กรุณากดลิงก์ผู้เข้าประกวดเพื่อทำการโหวต', 'success');
+            document.getElementById('mainSection').innerHTML = `<h5 class="text-success mt-4">ลงทะเบียนสำเร็จในชื่อ ${name}</h5><p class="text-muted">กรุณาสแกน QR Code ที่รูปภาพเพื่อทำการโหวต</p>`;
+            Swal.fire('สำเร็จ', 'ลงทะเบียนเรียบร้อยแล้ว กรุณาสแกน QR Code ที่รูปภาพเพื่อทำการโหวต', 'success');
           }
         }
       } catch (err) {
