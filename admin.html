@@ -17,16 +17,100 @@
   </div>
 
   <div class="container mt-4" id="adminDashboard" style="display:none;">
-    <h3 class="mb-4">ฝ่ายศาสนกิจ - Dashboard สถิติการโหวต</h3>
-    <div class="card p-4 mb-4">
-      <canvas id="voteChart" height="100"></canvas>
+    <h3 class="mb-4">ฝ่ายศาสนกิจ - ระบบจัดการ Popular Vote</h3>
+    
+    <ul class="nav nav-tabs mb-3" id="myTab" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#stats" type="button">สถิติการโหวต</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#manage" type="button" onclick="loadContestants()">จัดการผู้เข้าประกวด</button>
+      </li>
+    </ul>
+
+    <div class="tab-content">
+      <div class="tab-pane fade show active" id="stats">
+        <div class="card p-4 mb-4">
+          <canvas id="voteChart" height="100"></canvas>
+        </div>
+      </div>
+
+      <div class="tab-pane fade" id="manage">
+        <div class="card p-4 mb-4">
+          <div class="d-flex justify-content-between mb-3">
+            <h5>รายชื่อผู้เข้าประกวด</h5>
+            <button class="btn btn-success" onclick="openModal('add')">+ เพิ่มผู้เข้าประกวด</button>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-bordered align-middle text-center">
+              <thead class="table-dark">
+                <tr>
+                  <th>เบอร์</th>
+                  <th>รูปภาพ</th>
+                  <th>ชื่อ-สกุล</th>
+                  <th>แผนก</th>
+                  <th>จัดการ</th>
+                </tr>
+              </thead>
+              <tbody id="contestantTableBody">
+                </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </div>
-    <button class="btn btn-outline-danger" onclick="location.href='index.html'">กลับหน้าหลัก</button>
+    <button class="btn btn-outline-danger mt-3" onclick="location.href='index.html'">กลับหน้าหลัก</button>
   </div>
 
+  <div class="modal fade" id="formModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="modalTitle">เพิ่มผู้เข้าประกวด</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="actionType">
+          <input type="hidden" id="oldNo">
+          <input type="hidden" id="oldImageUrl">
+          
+          <div class="mb-3">
+            <label>เบอร์ผู้ประกวด</label>
+            <input type="number" id="cNo" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label>ชื่อ-นามสกุล</label>
+            <input type="text" id="cName" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label>แผนก</label>
+            <input type="text" id="cDept" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label>รูปภาพ (ถ้ามีรูปเดิมอยู่แล้วและไม่ต้องการเปลี่ยน ไม่ต้องเลือกใหม่)</label>
+            <input type="file" id="cImage" class="form-control" accept="image/*">
+            <div class="mt-2 text-center">
+               <img id="previewImg" src="" style="max-height: 150px; display: none;">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer justify-content-center">
+          <button type="button" class="btn btn-primary px-4" onclick="saveContestant()">บันทึกข้อมูล</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script>
     // === นำ Web App URL ของ GAS มาใส่ตรงนี้ ===
     const API_URL = "https://script.google.com/macros/s/AKfycbzdk5GjHQHlvqHSAqBNhKlUXdMnsZ1FmlCuhKV-3-R9es_5r6JhGYSZLcVZBBAJOd5y3A/exec"; 
+    let chartInstance = null;
+    let formModal;
+
+    window.onload = () => {
+      formModal = new bootstrap.Modal(document.getElementById('formModal'));
+    }
 
     async function callAPI(payload) {
       const response = await fetch(API_URL, {
@@ -61,7 +145,9 @@
         const stats = res.data;
         const labels = Object.keys(stats).map(k => `เบอร์ ${k}`);
         const data = Object.values(stats);
-        new Chart(document.getElementById('voteChart'), {
+        
+        if (chartInstance) chartInstance.destroy(); // ลบกราฟเก่าก่อนวาดใหม่
+        chartInstance = new Chart(document.getElementById('voteChart'), {
           type: 'bar',
           data: {
             labels: labels,
@@ -70,6 +156,126 @@
           options: { scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
         });
       }
+    }
+
+    // ================= ส่วนจัดการผู้เข้าประกวด =================
+    async function loadContestants() {
+      Swal.showLoading();
+      const res = await callAPI({ action: 'getAllContestants' });
+      Swal.close();
+      if (res.status === 'success') {
+        const tbody = document.getElementById('contestantTableBody');
+        tbody.innerHTML = '';
+        res.data.forEach(item => {
+          tbody.innerHTML += `
+            <tr>
+              <td>${item.no}</td>
+              <td><img src="${item.image}" style="max-height:50px; border-radius:5px;"></td>
+              <td>${item.name}</td>
+              <td>${item.dept}</td>
+              <td>
+                <button class="btn btn-sm btn-warning" onclick="openModal('edit', '${item.no}', '${item.name}', '${item.dept}', '${item.image}')">แก้ไข</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteContestant('${item.no}')">ลบ</button>
+              </td>
+            </tr>
+          `;
+        });
+      }
+    }
+
+    function openModal(type, no='', name='', dept='', imgUrl='') {
+      document.getElementById('actionType').value = type;
+      document.getElementById('cNo').value = no;
+      document.getElementById('oldNo').value = no;
+      document.getElementById('cName').value = name;
+      document.getElementById('cDept').value = dept;
+      document.getElementById('oldImageUrl').value = imgUrl;
+      document.getElementById('cImage').value = ''; // เคลียร์ไฟล์
+      
+      const preview = document.getElementById('previewImg');
+      if (imgUrl) {
+        preview.src = imgUrl;
+        preview.style.display = 'inline-block';
+      } else {
+        preview.style.display = 'none';
+      }
+
+      document.getElementById('modalTitle').innerText = type === 'add' ? 'เพิ่มผู้เข้าประกวด' : 'แก้ไขข้อมูลเบอร์ ' + no;
+      formModal.show();
+    }
+
+    // แปลงไฟล์รูปเป็น Base64
+    function getBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = error => reject(error);
+      });
+    }
+
+    async function saveContestant() {
+      const type = document.getElementById('actionType').value;
+      const no = document.getElementById('cNo').value;
+      const name = document.getElementById('cName').value;
+      const dept = document.getElementById('cDept').value;
+      const oldNo = document.getElementById('oldNo').value;
+      const oldImg = document.getElementById('oldImageUrl').value;
+      const fileInput = document.getElementById('cImage').files[0];
+
+      if (!no || !name || !dept) return Swal.fire('แจ้งเตือน', 'กรุณากรอกข้อมูลให้ครบ', 'warning');
+
+      Swal.fire({ title: 'กำลังบันทึกข้อมูลและอัปโหลดรูป...', allowOutsideClick: false, didOpen: () => { Swal.showLoading() }});
+
+      let base64 = null;
+      if (fileInput) {
+        base64 = await getBase64(fileInput);
+      }
+
+      const payload = {
+        action: 'saveContestant',
+        data: {
+          actionType: type,
+          oldNo: oldNo,
+          no: no,
+          name: name,
+          dept: dept,
+          imageOld: oldImg,
+          imageBase64: base64
+        }
+      };
+
+      const res = await callAPI(payload);
+      if (res.status === 'success') {
+        formModal.hide();
+        Swal.fire('สำเร็จ', res.msg, 'success');
+        loadContestants(); // โหลดตารางใหม่
+      } else {
+        Swal.fire('ผิดพลาด', res.msg, 'error');
+      }
+    }
+
+    function deleteContestant(no) {
+      Swal.fire({
+        title: `ยืนยันการลบเบอร์ ${no} ?`,
+        text: "ข้อมูลนี้จะถูกลบออกจากระบบทันที",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#3085d6',
+        confirmButtonText: 'ใช่, ลบเลย!'
+      }).then(async (result) => {
+        if (result.isConfirmed) {
+          Swal.showLoading();
+          const res = await callAPI({ action: 'deleteContestant', no: no });
+          if (res.status === 'success') {
+            Swal.fire('ลบแล้ว!', res.msg, 'success');
+            loadContestants();
+          } else {
+            Swal.fire('ผิดพลาด', res.msg, 'error');
+          }
+        }
+      });
     }
   </script>
 </body>
