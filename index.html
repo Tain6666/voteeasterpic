@@ -100,24 +100,24 @@
   <script>
     // === นำ Web App URL ของ GAS มาใส่ตรงนี้ ===
     const API_URL = "https://script.google.com/macros/s/AKfycbzdk5GjHQHlvqHSAqBNhKlUXdMnsZ1FmlCuhKV-3-R9es_5r6JhGYSZLcVZBBAJOd5y3A/exec"; 
-
-    // ดึงเบอร์จาก URL เช่น https://.../index.html?no=1
     const urlParams = new URLSearchParams(window.location.search);
     const targetNo = urlParams.get('no'); 
     let currentUser = JSON.parse(localStorage.getItem('bchVoterData'));
 
-    window.onload = () => {
-      if (currentUser && targetNo) {
+    window.onload = async () => {
+      if (currentUser) {
         document.getElementById('mainSection').style.display = 'none';
-        showVoteModal(targetNo);
+        
+        // เข้ามาแล้วเช็คเลยว่ามีชื่อในระบบหรือไม่ (ลดความหน่วงโดยรวมกับดึงข้อมูลไว้ด้วยกัน)
+        const checkNo = targetNo ? targetNo : '0';
+        await verifyAndLoad(checkNo);
       }
     };
 
-    // ฟังก์ชันยิง API กลาง
     async function callAPI(payload) {
       const response = await fetch(API_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // ใช้ text/plain เพื่อเลี่ยง CORS Preflight
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(payload)
       });
       return response.json();
@@ -131,7 +131,7 @@
       if (type === 'customer') idInput.placeholder = "เบอร์โทร 10 หลัก (0xxxxxxxxx)";
     }
 
-    function registerAndCheck() {
+    async function registerAndCheck() {
       const type = document.getElementById('userType').value;
       const name = document.getElementById('userName').value;
       const id = document.getElementById('userId').value;
@@ -140,35 +140,65 @@
       if (type === 'emp' && !/^0\d{5}$/.test(id)) return Swal.fire('ผิดพลาด', 'รหัสพนักงานต้องขึ้นต้นด้วย 0 และมี 6 หลัก', 'error');
       if (type === 'customer' && !/^0\d{9}$/.test(id)) return Swal.fire('ผิดพลาด', 'เบอร์โทรต้องขึ้นต้นด้วย 0 และมี 10 หลัก', 'error');
 
-      currentUser = { type, name, id };
-      localStorage.setItem('bchVoterData', JSON.stringify(currentUser));
-      
-      if (targetNo) showVoteModal(targetNo);
-      else Swal.fire('สำเร็จ', 'ลงทะเบียนเรียบร้อยแล้ว กรุณากดลิงก์ผู้เข้าประกวดเพื่อทำการโหวต', 'success');
+      const userData = { type, name, id };
+      Swal.fire({ title: 'กำลังลงทะเบียนเข้าสู่ระบบ...', allowOutsideClick: false, didOpen: () => { Swal.showLoading() }});
+
+      try {
+        const res = await callAPI({ action: 'registerUser', userData: userData });
+        if (res.status === 'success') {
+          localStorage.setItem('bchVoterData', JSON.stringify(userData));
+          currentUser = userData;
+
+          if (targetNo) {
+            await verifyAndLoad(targetNo); // โหลดข้อมูลโหวตต่อเลย
+          } else {
+            document.getElementById('mainSection').innerHTML = `<h5 class="text-success mt-4">ลงทะเบียนสำเร็จในชื่อ ${name}</h5><p class="text-muted">กรุณากดลิงก์ของผู้เข้าประกวดเพื่อทำการโหวต</p>`;
+            Swal.fire('สำเร็จ', 'ลงทะเบียนเรียบร้อยแล้ว กรุณากดลิงก์ผู้เข้าประกวดเพื่อทำการโหวต', 'success');
+          }
+        }
+      } catch (err) {
+        Swal.fire('ผิดพลาด', 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้', 'error');
+      }
     }
 
-    async function showVoteModal(no) {
-      Swal.fire({ title: 'กำลังตรวจสอบข้อมูล...', didOpen: () => { Swal.showLoading() }});
+    // ฟังก์ชันนี้ทำงานครั้งเดียว ดึงข้อมูลครบหมด
+    async function verifyAndLoad(no) {
+      Swal.fire({ title: 'กำลังตรวจสอบข้อมูล...', allowOutsideClick: false, didOpen: () => { Swal.showLoading() }});
       
       try {
-        // เช็คว่าเคยโหวตหรือยัง
-        const checkRes = await callAPI({ action: 'checkVote', userId: currentUser.id });
-        if (checkRes.votedFor) {
-          return Swal.fire('คุณได้ใช้สิทธิ์แล้ว', `ท่านได้โหวตให้เบอร์ ${checkRes.votedFor} ไปแล้ว`, 'info');
+        const res = await callAPI({ action: 'getVotePageData', userId: currentUser.id, no: no });
+
+        // 1. ตรวจพบว่าไม่มี User ในระบบ (ถูกลบ หรือข้อมูลผิด)
+        if (res.status === 'user_not_found') {
+          localStorage.removeItem('bchVoterData');
+          currentUser = null;
+          document.getElementById('mainSection').style.display = 'block'; // โชว์ฟอร์มลงทะเบียนอีกครั้ง
+          return Swal.fire('เซสชันหมดอายุ', 'ไม่พบข้อมูลของคุณในระบบ หรือข้อมูลถูกลบไปแล้ว กรุณาลงทะเบียนใหม่', 'warning');
         }
 
-        // ดึงข้อมูลผู้ประกวด
-        const pRes = await callAPI({ action: 'getContestant', no: no });
-        Swal.close();
-        
-        if (pRes.status === 'success') {
-          document.getElementById('mNo').innerText = pRes.data.no;
-          document.getElementById('mName').innerText = pRes.data.name;
-          document.getElementById('mDept').innerText = pRes.data.dept;
-          document.getElementById('mImg').src = pRes.data.image;
+        // 2. ตรวจพบว่าโหวตไปแล้ว
+        if (res.status === 'voted') {
+          document.getElementById('mainSection').innerHTML = `<h5 class="text-primary mt-4">ท่านได้ใช้สิทธิ์โหวตให้เบอร์ ${res.votedFor} ไปแล้ว</h5>`;
+          document.getElementById('mainSection').style.display = 'block';
+          return Swal.fire('คุณได้ใช้สิทธิ์แล้ว', `ท่านได้โหวตให้เบอร์ ${res.votedFor} ไปแล้ว`, 'info');
+        }
+
+        // 3. ผ่านเงื่อนไข โชว์ป๊อปอัพโหวต
+        if (res.status === 'ready' && res.contestant) {
+          Swal.close();
+          document.getElementById('mNo').innerText = res.contestant.no;
+          document.getElementById('mName').innerText = res.contestant.name;
+          document.getElementById('mDept').innerText = res.contestant.dept;
+          document.getElementById('mImg').src = res.contestant.image;
           new bootstrap.Modal(document.getElementById('voteModal')).show();
-        } else {
-          Swal.fire('ผิดพลาด', pRes.msg, 'error');
+        } 
+        else if (res.status === 'ready_no_target') {
+          Swal.close();
+          document.getElementById('mainSection').innerHTML = `<h5 class="text-success mt-4">คุณเข้าสู่ระบบในชื่อ ${currentUser.name}</h5><p class="text-muted">กรุณากดลิงก์ของผู้เข้าประกวดเพื่อทำการโหวต</p>`;
+          document.getElementById('mainSection').style.display = 'block';
+        }
+        else {
+          Swal.fire('ผิดพลาด', res.msg, 'error');
         }
       } catch (err) {
         Swal.fire('ผิดพลาด', 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้', 'error');
@@ -183,6 +213,8 @@
         const res = await callAPI({ action: 'submitVote', userData: currentUser });
         if (res.status === 'success') {
           bootstrap.Modal.getInstance(document.getElementById('voteModal')).hide();
+          document.getElementById('mainSection').innerHTML = `<h5 class="text-primary mt-4">ท่านได้ใช้สิทธิ์โหวตให้เบอร์ ${targetNo} ไปแล้ว</h5>`;
+          document.getElementById('mainSection').style.display = 'block';
           Swal.fire('เรียบร้อย!', res.msg, 'success');
         } else {
           Swal.fire('ผิดพลาด', res.msg, 'error');
